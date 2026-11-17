@@ -1,5 +1,0 @@
-2026-11-17 09:12:45 | INFO     | <string>:1 | Teste de log funcionando!
-2026-11-17 09:26:17 | INFO     | sniffer:18 | Iniciando diagnóstico de ambiente do NetSniffer.
-2026-11-17 10:42:20 | INFO     | sniffer_engine:47 | Captura iniciada | Interface=Padrão | Filtro=''
-2026-11-17 10:42:20 | WARNING  | sniffer_engine:64 | Aviso ao encerrar sniffer: Sniffing and sending packets is not available at layer 2: winpcap is not installed. You may use conf.L3socket or conf.L3socket6 to access layer 3
-2026-11-17 10:42:20 | INFO     | sniffer_engine:68 | Captura encerrada.
