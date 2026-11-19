@@ -12,13 +12,17 @@ def main() -> None:
     engine = SnifferEngine(storage=storage)
     ui = TerminalUI(storage=storage, engine=engine)
 
+    ui = TerminalUI(engine=engine, storage=storage)
     try:
-        ui.run()
-    except KeyboardInterrupt:
+        while True:
+            try:
+                ui.run()
+                break
+            except KeyboardInterrupt:
+                continue
+    finally:
         if engine.is_running:
             engine.stop()
-        print("\nExecução interrompida pelo usuário.")
-
 
 if __name__ == "__main__":
     main()

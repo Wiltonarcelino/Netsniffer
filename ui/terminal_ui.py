@@ -1,3 +1,7 @@
+import time
+import msvcrt
+from rich.live import Live
+from rich.panel import Panel
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Prompt
@@ -58,6 +62,108 @@ class TerminalUI:
             table.add_row(pkt.timestamp, pkt.protocol, src, dst, f"{pkt.length}B", pkt.info)
 
         console.print(table)
+    # NOVO TESTEE
+    def _build_live_view(
+        self, ip: str = "", protocol: str = "", keyword: str = "", limit: int = 20
+    ) -> Table:
+        """Monta a tabela atualizada para o painel em tempo real com filtros opcionais."""
+        if ip or protocol or keyword:
+            packets = self.storage.search_packets(
+                ip=ip, protocol=protocol, keyword=keyword, limit=limit
+            )
+            filtro_label = f" | Filtro: IP='{ip or '*'}' Proto='{protocol or '*'}' Detalhe='{keyword or '*'}'"
+        else:
+            packets = self.storage.get_recent_packets(limit=limit)
+            filtro_label = ""
+
+        table = Table(
+            title=(
+                f"Monitoramento em Tempo Real{filtro_label} | Total: {self.storage.total_packets} "
+                f"— [Pressione Q para voltar ao menu]"
+            ),
+            header_style="bold cyan",
+        )
+        table.add_column("Hora", style="dim", width=12)
+        table.add_column("Proto", style="bold magenta", width=7)
+        table.add_column("Origem", style="green")
+        table.add_column("Destino", style="cyan")
+        table.add_column("Tam.", justify="right", width=7)
+        table.add_column("Detalhes", style="white")
+
+        for pkt in packets:
+            src = f"{pkt.src_ip}:{pkt.src_port}" if pkt.src_port else pkt.src_ip
+            dst = f"{pkt.dst_ip}:{pkt.dst_port}" if pkt.dst_port else pkt.dst_ip
+            table.add_row(pkt.timestamp, pkt.protocol, src, dst, f"{pkt.length}B", pkt.info)
+
+        return table
+
+    def watch_live(self) -> None:
+        """Exibe os pacotes subindo ao vivo até o usuário pressionar Q."""
+        ip_filter = Prompt.ask("Filtrar por IP específico? (Enter para todos)", default="")
+        proto_filter = Prompt.ask("Filtrar por protocolo (TCP, UDP, DNS, ICMP ou Enter para todos)", default="")
+        detail_filter = Prompt.ask("Filtrar nos detalhes (ex: HTTPS, HTTP, Query ou Enter para todos)", default="")
+
+        if not self.engine.is_running:
+            self.engine.start()
+
+        with Live(
+            self._build_live_view(ip=ip_filter, protocol=proto_filter, keyword=detail_filter),
+            refresh_per_second=4,
+            console=console,
+        ) as live:
+            while True:
+                if msvcrt.kbhit():
+                    key = msvcrt.getch().decode("utf-8", errors="ignore").lower()
+                    if key == "q":
+                        break
+                time.sleep(0.2)
+                live.update(
+                    self._build_live_view(ip=ip_filter, protocol=proto_filter, keyword=detail_filter)
+                )
+        while msvcrt.kbhit():
+            msvcrt.getch()  # Limpa o buffer de teclas
+        time.sleep(0.1)
+        console.print("\n[yellow]Visualização ao vivo encerrada (captura continua em segundo plano).[/yellow]")
+
+    #TESTE NOVO2
+    def search_history(self) -> None:
+        """Busca pacotes no histórico armazenado por IP, protocolo, porta ou detalhe."""
+        if self.storage.total_packets == 0:
+            console.print("[yellow]Nenhum pacote no histórico para pesquisar.[/yellow]")
+            return
+
+        ip = Prompt.ask("IP para rastrear (origem ou destino, Enter para ignorar)", default="")
+        protocol = Prompt.ask("Protocolo (TCP, UDP, DNS, ICMP ou Enter para ignorar)", default="")
+        port_raw = Prompt.ask("Porta (ex: 443, 53, 1521 ou Enter para ignorar)", default="")
+        keyword = Prompt.ask("Detalhe (ex: HTTPS, HTTP, google ou Enter para ignorar)", default="")
+
+        port = int(port_raw) if port_raw.isdigit() else None
+        results = self.storage.search_packets(
+            ip=ip, protocol=protocol, port=port, keyword=keyword, limit=40
+        )
+
+        if not results:
+            console.print("[yellow]Nenhum pacote encontrado com esses critérios.[/yellow]")
+            return
+
+        table = Table(
+            title=f"Resultados da Busca ({len(results)} pacotes exibidos)",
+            header_style="bold green",
+        )
+        table.add_column("Hora", style="dim", width=12)
+        table.add_column("Proto", style="bold magenta", width=7)
+        table.add_column("Origem", style="green")
+        table.add_column("Destino", style="cyan")
+        table.add_column("Tam.", justify="right", width=7)
+        table.add_column("Detalhes", style="white")
+
+        for pkt in results:
+            src = f"{pkt.src_ip}:{pkt.src_port}" if pkt.src_port else pkt.src_ip
+            dst = f"{pkt.dst_ip}:{pkt.dst_port}" if pkt.dst_port else pkt.dst_ip
+            table.add_row(pkt.timestamp, pkt.protocol, src, dst, f"{pkt.length}B", pkt.info)
+
+        console.print(table)
+
     def show_statistics(self) -> None:
         """Exibe estatísticas consolidadas de protocolos e IPs mais ativos."""
         summary = self.storage.get_summary()
@@ -99,10 +205,15 @@ class TerminalUI:
                 "[bold cyan][4][/bold cyan] Estatísticas\n"
                 "[bold cyan][5][/bold cyan] Definir Filtro BPF  "
                 "[bold cyan][6][/bold cyan] Limpar Dados\n"
+                "[bold green][7][/bold green] Ver Pacotes em Tempo Real\n"
+                "[bold yellow][8][/bold yellow] Buscar / Filtrar no Histórico\n"
                 "[bold red][0][/bold red] Sair"
             )
-
-            choice = Prompt.ask("\nEscolha uma opção", choices=["0", "1", "2", "3", "4", "5", "6"], default="3")
+            console.print("\n[bold]Escolha uma opção [0/1/2/3/4/5/6/7/8] (7):[/bold] ", end="")
+            try:
+                choice = input().strip() or "7"
+            except (EOFError, KeyboardInterrupt):
+                choice = "7"
 
             if choice == "1":
                 ok, msg = self.engine.start()
@@ -136,4 +247,11 @@ class TerminalUI:
                 if self.engine.is_running:
                     self.engine.stop()
                 console.print("[bold cyan]Encerrando NetSniffer. Até logo![/bold cyan]")
-                break    
+
+            elif choice == "7":
+                self.watch_live()
+                break 
+
+            elif choice == "8":
+                self.search_history()
+                   

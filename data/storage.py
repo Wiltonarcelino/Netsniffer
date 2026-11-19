@@ -1,5 +1,6 @@
-from collections import Counter, deque
 import threading
+from collections import Counter, deque
+from typing import Optional
 from typing import Dict, List
 from config import MAX_PACKET_BUFFER
 from data.models import PacketInfo
@@ -49,3 +50,30 @@ class TrafficStorage:
             self.total_bytes = 0
             self.protocol_counts.clear()
             self.ip_counts.clear()
+
+    def search_packets(
+        self,
+        ip: str = "",
+        protocol: str = "",
+        port: Optional[int] = None,
+        keyword: str = "",
+        limit: int = 30,
+    ) -> list[PacketInfo]:
+        """Filtra pacotes no histórico por IP, protocolo, porta ou texto nos detalhes."""
+        ip = ip.strip()
+        protocol = protocol.strip().upper()
+        keyword = keyword.strip().lower()
+
+        with self._lock:
+            results = list(self._packets)
+
+        if ip:
+            results = [p for p in results if p.src_ip == ip or p.dst_ip == ip]
+        if protocol:
+            results = [p for p in results if p.protocol.upper() == protocol]
+        if port is not None:
+            results = [p for p in results if p.src_port == port or p.dst_port == port]
+        if keyword:
+            results = [p for p in results if keyword in p.info.lower()]
+
+        return results[-limit:]
