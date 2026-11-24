@@ -1,4 +1,5 @@
 import threading
+import ipaddress
 from collections import Counter, deque
 from typing import Optional
 from typing import Dict, List
@@ -77,3 +78,32 @@ class TrafficStorage:
             results = [p for p in results if keyword in p.info.lower()]
 
         return results[-limit:]
+    # DIZER O DOMINIO DO IP
+    def get_public_ips(self, limit: int = 10) -> list[str]:
+        """Retorna uma lista de IPs públicos únicos vistos nos pacotes armazenados."""
+        with self._lock:
+            packets = list(self._packets)
+
+        public_ips: list[str] = []
+        seen: set[str] = set()
+
+        for pkt in reversed(packets):
+            for candidate in (pkt.src_ip, pkt.dst_ip):
+                if candidate in seen:
+                    continue
+                seen.add(candidate)
+                try:
+                    ip_obj = ipaddress.ip_address(candidate)
+                    if not (
+                        ip_obj.is_private
+                        or ip_obj.is_loopback
+                        or ip_obj.is_multicast
+                        or ip_obj.is_reserved
+                    ):
+                        public_ips.append(candidate)
+                        if len(public_ips) >= limit:
+                            return public_ips
+                except ValueError:
+                    continue
+
+        return public_ips

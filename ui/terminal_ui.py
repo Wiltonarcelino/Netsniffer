@@ -7,9 +7,11 @@ from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.table import Table
 from config import APP_NAME, APP_VERSION
+from core.ip_inspector import inspect_ip
 from core.sniffer_engine import SnifferEngine
 from data.storage import TrafficStorage
 from utils.validators import get_default_interface, is_admin
+from core.exporter import export_to_csv, export_to_json, export_to_txt
 
 console = Console()
 
@@ -163,6 +165,71 @@ class TerminalUI:
             table.add_row(pkt.timestamp, pkt.protocol, src, dst, f"{pkt.length}B", pkt.info)
 
         console.print(table)
+    #RASTREAR IP
+    def inspect_remote_ip(self) -> None:
+        """Exibe IPs públicos capturados e consulta geolocalização, provedor e ASN."""
+        recent_public = self.storage.get_public_ips(limit=10)
+        if recent_public:
+            console.print(
+                f"[dim]IPs públicos vistos recentemente:[/dim] [cyan]{', '.join(recent_public)}[/cyan]"
+            )
+
+        target_ip = Prompt.ask("Digite o IP que deseja inspecionar (ou Enter para cancelar)", default="").strip()
+        if not target_ip:
+            return
+
+        with console.status(f"[cyan]Consultando dados de {target_ip}...[/cyan]"):
+            info = inspect_ip(target_ip)
+
+        if not info.get("ok"):
+            console.print(f"[bold red]Erro:[/bold red] {info.get('error')}")
+            return
+
+        table = Table(title=f"Relatório OSINT / Rede — {info['ip']}", header_style="bold cyan")
+        table.add_column("Atributo", style="bold white", width=18)
+        table.add_column("Valor", style="green")
+
+        table.add_row("Endereço IP", info["ip"])
+        table.add_row("Classificação", info["type"])
+        table.add_row("País / Região", info["country"])
+        table.add_row("Cidade", info["city"])
+        table.add_row("Provedor (ISP)", info["isp"])
+        table.add_row("Organização", info["org"])
+        table.add_row("Sistema Autônomo", info["as"])
+
+        console.print(table)
+    #importar arquivos .txt, .cvs
+    def export_reports(self) -> None:
+        """Exporta os pacotes armazenados em CSV, JSON, TXT ou todos os formatos."""
+        if self.storage.total_packets == 0:
+            console.print("[yellow]Nenhum pacote armazenado para exportar.[/yellow]")
+            return
+
+        fmt = Prompt.ask(
+            "Escolha o formato de exportação",
+            choices=["csv", "json", "txt", "todos"],
+            default="todos",
+        )
+
+        # Pega até 5000 pacotes do histórico atual
+        packets = self.storage.get_recent_packets(limit=5000)
+        stats = {
+            "total_packets": self.storage.total_packets,
+            "total_bytes": self.storage.total_bytes,
+            "protocols": dict(self.storage.protocol_counts),
+        }
+
+        created: list[str] = []
+        if fmt in ("csv", "todos"):
+            created.append(str(export_to_csv(packets)))
+        if fmt in ("json", "todos"):
+            created.append(str(export_to_json(packets, stats)))
+        if fmt in ("txt", "todos"):
+            created.append(str(export_to_txt(packets, stats)))
+
+        console.print("[bold green]Relatório(s) gerado(s) com sucesso:[/bold green]")
+        for path in created:
+            console.print(f"  [cyan]-> {path}[/cyan]")
 
     def show_statistics(self) -> None:
         """Exibe estatísticas consolidadas de protocolos e IPs mais ativos."""
@@ -207,9 +274,11 @@ class TerminalUI:
                 "[bold cyan][6][/bold cyan] Limpar Dados\n"
                 "[bold green][7][/bold green] Ver Pacotes em Tempo Real\n"
                 "[bold yellow][8][/bold yellow] Buscar / Filtrar no Histórico\n"
+                "[bold magenta][9][/bold magenta] Inspecionar IP (Geo & ASN)\n"
+                "[bold blue][10][/bold blue] Exportar Relatórios (CSV/JSON/TXT)\n"
                 "[bold red][0][/bold red] Sair"
             )
-            console.print("\n[bold]Escolha uma opção [0/1/2/3/4/5/6/7/8] (7):[/bold] ", end="")
+            console.print("\n[bold]Escolha uma opção [0/1/2/3/4/5/6/7/8/9] (7):[/bold] ", end="")
             try:
                 choice = input().strip() or "7"
             except (EOFError, KeyboardInterrupt):
@@ -254,4 +323,9 @@ class TerminalUI:
 
             elif choice == "8":
                 self.search_history()
-                   
+
+            elif choice == "9":
+                self.inspect_remote_ip()
+
+            elif choice == "10":
+                self.export_reports()
