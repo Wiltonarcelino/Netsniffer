@@ -316,10 +316,10 @@ class TerminalUI:
                 if self.engine.is_running:
                     self.engine.stop()
                 console.print("[bold cyan]Encerrando NetSniffer. Até logo![/bold cyan]")
+                break
 
             elif choice == "7":
                 self.watch_live()
-                break 
 
             elif choice == "8":
                 self.search_history()
@@ -329,3 +329,4 @@ class TerminalUI:
 
             elif choice == "10":
                 self.export_reports()
+                

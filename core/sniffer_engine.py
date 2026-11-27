@@ -59,7 +59,7 @@ class SnifferEngine:
                 except socket.timeout:
                     continue
         finally:
-            sock.ioctl(socket.SIO_RCVALL, socket.RCVALL_OFF)
+            sock.ioctl(socket.SIO_RCVALL, socket.RCVALL_ON)
             sock.close()
 
     def start(self) -> tuple[bool, str]:

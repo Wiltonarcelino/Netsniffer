@@ -4,6 +4,7 @@ from scapy.layers.inet import IP, TCP, UDP, ICMP
 from scapy.layers.inet6 import IPv6
 from scapy.layers.dns import DNS, DNSQR
 from data.models import PacketInfo
+from core.security_auditor import detect_cleartext_credentials
 
 COMMON_PORTS = {
     20: "FTP-Data",
@@ -62,7 +63,12 @@ def parse_packet(packet: Packet) -> Optional[PacketInfo]:
         service = COMMON_PORTS.get(dst_port) or COMMON_PORTS.get(src_port) or ""
         prefix = f"{service} | " if service else ""
         info = f"{prefix}Flags: [{flags}]"
-        
+
+        tcp_payload = bytes(packet[TCP].payload)
+        alert = detect_cleartext_credentials(tcp_payload)
+        if alert:
+            info = f"{alert} | {info}"
+                
     elif packet.haslayer(UDP):
         protocol = "UDP"
         src_port = packet[UDP].sport

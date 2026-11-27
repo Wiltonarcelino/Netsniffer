@@ -12,6 +12,7 @@ class TrafficStorage:
 
     def __init__(self, max_packets: int = MAX_PACKET_BUFFER) -> None:
         self._lock = threading.Lock()
+        self._security_alerts: list[PacketInfo] = []
         self._packets: deque[PacketInfo] = deque(maxlen=max_packets)
         self.total_packets: int = 0
         self.total_bytes: int = 0
@@ -22,6 +23,8 @@ class TrafficStorage:
         """Registra um novo pacote no buffer circular e atualiza os contadores."""
         with self._lock:
             self._packets.append(packet)
+            if "[ALERTA:" in packet.info:
+                self._security_alerts.append(packet)
             self.total_packets += 1
             self.total_bytes += packet.length
             self.protocol_counts[packet.protocol] += 1
@@ -47,6 +50,7 @@ class TrafficStorage:
         """Zera o buffer e todas as estatísticas para iniciar uma nova captura."""
         with self._lock:
             self._packets.clear()
+            self._security_alerts.clear()
             self.total_packets = 0
             self.total_bytes = 0
             self.protocol_counts.clear()
@@ -54,30 +58,41 @@ class TrafficStorage:
 
     def search_packets(
         self,
-        ip: str = "",
-        protocol: str = "",
-        port: Optional[int] = None,
-        keyword: str = "",
-        limit: int = 30,
+        ip: str | None = None,
+        protocol: str | None = None,
+        port: int | None = None,
+        keyword: str | None = None,
+        limit: int = 50,
     ) -> list[PacketInfo]:
-        """Filtra pacotes no histórico por IP, protocolo, porta ou texto nos detalhes."""
-        ip = ip.strip()
-        protocol = protocol.strip().upper()
-        keyword = keyword.strip().lower()
+        """Filtra todo o buffer armazenado antes de aplicar o limite de exibição."""
+        ip_clean = ip.strip() if ip and ip.strip() else None
+        proto_clean = protocol.strip().upper() if protocol and protocol.strip() else None
+        kw_clean = keyword.strip().lower() if keyword and keyword.strip() else None
 
         with self._lock:
-            results = list(self._packets)
+            if kw_clean and "alerta" in kw_clean:
+                packets = list(self._security_alerts)
+            else:
+                packets = list(self._packets)
 
-        if ip:
-            results = [p for p in results if p.src_ip == ip or p.dst_ip == ip]
-        if protocol:
-            results = [p for p in results if p.protocol.upper() == protocol]
-        if port is not None:
-            results = [p for p in results if p.src_port == port or p.dst_port == port]
-        if keyword:
-            results = [p for p in results if keyword in p.info.lower()]
+        results: list[PacketInfo] = []
+        # Percorre do mais recente para o mais antigo em TODO o buffer
+        for pkt in reversed(packets):
+            if ip_clean and ip_clean not in pkt.src_ip and ip_clean not in pkt.dst_ip:
+                continue
+            if proto_clean and pkt.protocol.upper() != proto_clean:
+                continue
+            if port is not None and pkt.src_port != port and pkt.dst_port != port:
+                continue
+            if kw_clean and kw_clean not in pkt.info.lower():
+                continue
 
-        return results[-limit:]
+            results.append(pkt)
+            if len(results) >= limit:
+                break
+
+        return list(reversed(results))
+    
     # DIZER O DOMINIO DO IP
     def get_public_ips(self, limit: int = 10) -> list[str]:
         """Retorna uma lista de IPs públicos únicos vistos nos pacotes armazenados."""
